@@ -1,0 +1,6 @@
+patches
+syslogging
+pool membership
+supplemental packs - cloud
+avoid repeats of tasks if they complete successfully - force if necessary
+pragmas - for testing that tasks complete, avoid the tests at the end e.g. ntpq

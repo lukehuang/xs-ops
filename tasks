@@ -1,0 +1,17 @@
+00  10  Host Install
+      00  PXE Install of Base System
+      01  Additional Packages
+      05  Hostname
+
+10  20  Networking
+      10  Resolv.conf
+      12  Management Interfaces
+
+30  40  Packages and Configuration
+      30  Unzip host tarball to /
+
+40  50  Authentication
+      SSH
+
+TODO
+  Log Destination

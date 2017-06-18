@@ -1,0 +1,71 @@
+#!/bin/bash
+
+set -vex
+
+# ---- Image import tasks ------------------------------------------------
+source host.conf
+
+set -x -e -v -u
+shopt -s extglob nullglob
+hash -r
+
+# -----------------------------------------------------------------------
+
+mkdir -pv "$image_mount_point"
+
+grep -q "$image_mount_point" /etc/mtab || \
+  mount -v "$image_server":"$image_server_path" "$image_mount_point"
+
+PATH="$PATH:$image_mount_point"/scripts/
+hash -r
+
+export SR_UUID="$(xe sr-list name-label="$image_import_sr" params=uuid --minimal)"
+
+template_count=0
+template_uuids=()
+vm_uuids=()
+for glob in "${image_glob[@]:-}"; do
+  [[ $glob ]] || continue
+  echo "Processing glob '$glob'"
+
+  for image in "$image_mount_point/$image_set"/$glob; do
+
+    template_uuid=$( xva_import "$image" 2>/dev/null )
+    template_name=$( xe template-list uuid="$template_uuid" params=name-label --minimal )
+
+    if [[ $template_uuid ]]; then
+      template_uuids+=( "$template_uuid" );
+    fi
+
+    # TODO: undo the prefixing of __ before name-label when images already
+    # are named in this fashion.
+    if [[ $template_name =~ $templates_to_start ]]; then
+      # [[ $template_name = __* ]] || template_name="__$template_name"
+      xe template-param-set uuid="$template_uuid" name-label="__${template_name#__}"
+      vm_uuid=$( xe vm-clone uuid="$template_uuid" new-name-label="__${template_name#__}" )
+      vm_uuids+=( "$vm_uuid" )
+      xe template-param-set uuid="$vm_uuid" is-a-template=false
+      name_description=$(xe vm-param-get uuid="$vm_uuid" param-name=name-description)
+      xe vm-param-set uuid="$uuid" name-description="$name_description -- Created on $(date +%s) ($(date)) from template $template_name ($template_uuid) by $0."
+      xe vm-param-set uuid="$vm_uuid" other-config:auto_poweron=true
+      xe vm-start uuid="$vm_uuid"
+    fi
+
+  done
+
+done
+
+set +xvue
+echo ""
+echo "${#template_uuids[@]} templates imported."
+for uuid in "${template_uuids[@]}"; do
+  xe template-list uuid="$uuid" params=all | xe_grep 'printf "  * %s   %s (%s)  %s\n", uuid, name_label, name_description, os_version'
+done
+
+echo ""
+echo "${#vm_uuids[@]} VMs started."
+for uuid in "${vm_uuids[@]}"; do
+  xe vm-list uuid="$uuid" params=all | xe_grep 'printf "  * %s   %s (%s)  %s\n", uuid, name_label, name_description, os_version'
+done
+
+# ---------------------------------------------------------------------------
